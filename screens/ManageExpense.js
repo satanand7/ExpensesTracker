@@ -1,13 +1,26 @@
-import { useLayoutEffect } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { useContext, useLayoutEffect, useState } from "react";
+import { StyleSheet, View } from "react-native";
 import IconButton from "../components/UI/IconButton";
 import { GlobalStyles } from "../constants/styles";
-import Button from "../components/UI/Button";
+import { ExpensesContext } from "../store/expenses-context";
+import ExpenseForm from "../components/ManageExpense/ExpenseForm";
+import { deleteExpense, storeExpense, updateExpense } from "../util/http";
+import LoadingOverlay from "../components/UI/LoadingOverlay";
+import ErrorOverlay from "../components/UI/ErrorOverlay";
 
 function ManageExpense({ route, navigation }) {
+
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const [error, setError] = useState();
+
+    const expensesCtx = useContext(ExpensesContext);
+
     const editedExpenseId = route.params?.expenseId;
 
     const isEditing = !!editedExpenseId;
+
+    const selectedExpense = expensesCtx.expenses.find(expense => expense.id === editedExpenseId);
 
     useLayoutEffect(() => {
         navigation.setOptions({
@@ -15,24 +28,62 @@ function ManageExpense({ route, navigation }) {
         })
     }, [navigation, isEditing])
 
-    function deleteExpenseHandler() {
+    async function deleteExpenseHandler() {
+        setIsSubmitting(true);
+        try {
+            await deleteExpense(editedExpenseId);
+            expensesCtx.deleteExpense(editedExpenseId);
+            navigation.goBack();
+        } catch (error) {
+            setError('Could not delete expense - please try again leter !');
+            setIsSubmitting(false);
+        }
+    }
+
+    function cancelHandler() {
         navigation.goBack();
     }
 
-    function cancelHandler(){
-        navigation.goBack();
+    async function confirmHandler(expenseData) {
+        setIsSubmitting(true);
+        try {
+            if (isEditing) {
+                expensesCtx.updateExpense(editedExpenseId, expenseData);
+                await updateExpense(editedExpenseId, expenseData);
+            } else {
+                const id = await storeExpense(expenseData);
+                expensesCtx.addExpense({ ...expenseData, id: id });
+            }
+            navigation.goBack();
+        } catch (error) {
+            setError('Could not save data - please try again later!');
+            setIsSubmitting(false);
+        }
+       
+       
     }
 
-    function confirmHandler(){
-        navigation.goBack();
+    function errorHandler(){
+        setError(null);
     }
+
+    if(error && !isSubmitting){
+        return <ErrorOverlay message={error} onConfirm={errorHandler}/>
+    }
+
+    if(isSubmitting){
+        return <LoadingOverlay />
+    }
+
 
     return <View style={styles.container}>
+        <ExpenseForm
+            onCancel={cancelHandler}
+            onSubmit={confirmHandler}
+            submitButtonLabel={isEditing ? 'Update' : 'Add'}
+            defaultValues={selectedExpense}
+        />
 
-    <View style={styles.buttons}>
-        <Button mode={'flat'} onPress={cancelHandler} style={styles.button}>Cancel</Button>
-        <Button onPress={confirmHandler} style={styles.button}>{isEditing ? 'Update' : 'Add'}</Button>
-    </View>
 
         {isEditing && (<View style={styles.deleteContainer}>
             <IconButton icon={'trash'}
@@ -46,25 +97,16 @@ export default ManageExpense;
 
 const styles = StyleSheet.create({
     container: {
-        flex:1,
-        padding:24,
-        backgroundColor:GlobalStyles.colors.primary800
+        flex: 1,
+        padding: 24,
+        backgroundColor: GlobalStyles.colors.primary800
     },
-    buttons:{
-        flexDirection:'row',
-        justifyContent:'center',
-        alignItems:'center'
-    },
-    button:{
-        minWidth:120,
-        marginHorizontal:8
-    },
-    deleteContainer:{
-        marginTop:16,
-        paddingTop:8,
-        borderTopWidth:2,
-        borderTopColor:GlobalStyles.colors.primary200,
-        alignItems:'center'
-        
+    deleteContainer: {
+        marginTop: 16,
+        paddingTop: 8,
+        borderTopWidth: 2,
+        borderTopColor: GlobalStyles.colors.primary200,
+        alignItems: 'center'
+
     }
 })
